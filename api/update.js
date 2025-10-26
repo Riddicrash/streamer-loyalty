@@ -3,64 +3,35 @@ import admin from "firebase-admin";
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(
-      JSON.parse(
-        Buffer.from(
-          process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
-          "base64"
-        ).toString()
-      )
-    ),
+      JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString())
+    )
   });
 }
 
 const db = admin.firestore();
 
 export default async function handler(req, res) {
-  const { viewer, points, channel, key } = req.query;
+  const { viewer } = req.query;
 
-  if (key !== process.env.MASTER_API_KEY) {
-    return res.status(401).json({ error: "Unauthorized" });
+  try {
+    let snapshot;
+    if (viewer) {
+      // Return a specific viewer
+      const doc = await db.collection("leaderboard").doc(viewer).get();
+      if (!doc.exists) {
+        return res.json({ success: true, results: [{ name: viewer, points: 0 }] });
+      }
+      return res.json({ success: true, results: [doc.data()] });
+    } else {
+      // Return full leaderboard sorted by points descending
+      snapshot = await db.collection("leaderboard")
+                         .orderBy("points", "desc")
+                         .get();
+      const results = snapshot.docs.map(doc => doc.data());
+      return res.json({ success: true, results });
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message });
   }
-
-  if (!viewer || !points || !channel) {
-    return res.status(400).json({ error: "Missing parameters" });
-  }
-
-  const docRef = db.collection("leaderboard").doc(viewer);
-  const doc = await docRef.get();
-
-  const incrementPoints = parseInt(points);
-
-  if (doc.exists) {
-    const data = doc.data();
-
-    // Initialize chatPoints object if missing
-    if (!data.chatPoints) data.chatPoints = {};
-
-    // Use the actual channel name as key
-    data.chatPoints[channel] = (data.chatPoints[channel] || 0) + incrementPoints;
-
-    await docRef.update({ chatPoints: data.chatPoints });
-  } else {
-    // New viewer, initialize with this channel
-    const newData = {
-      name: viewer,
-      chatPoints: {
-        [channel]: incrementPoints,
-      },
-    };
-    await docRef.set(newData);
-  }
-
-  // Return full leaderboard with totals
-  const snapshot = await db.collection("leaderboard").get();
-  const results = snapshot.docs.map((doc) => {
-    const data = doc.data();
-    const totalPoints = data.chatPoints
-      ? Object.values(data.chatPoints).reduce((a, b) => a + b, 0)
-      : 0;
-    return { name: data.name, totalPoints, chatPoints: data.chatPoints };
-  });
-
-  return res.json({ success: true, count: results.length, results });
 }
