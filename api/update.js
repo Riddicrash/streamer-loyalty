@@ -1,4 +1,3 @@
-// /api/update.js
 import admin from "firebase-admin";
 
 if (!admin.apps.length) {
@@ -19,7 +18,6 @@ const db = admin.firestore();
 export default async function handler(req, res) {
   const { viewer, points, channel, key } = req.query;
 
-  // Check master key
   if (key !== process.env.MASTER_API_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -39,7 +37,7 @@ export default async function handler(req, res) {
     // Initialize chatPoints object if missing
     if (!data.chatPoints) data.chatPoints = {};
 
-    // Increment points for the specific channel
+    // Use the actual channel name as key
     data.chatPoints[channel] = (data.chatPoints[channel] || 0) + incrementPoints;
 
     await docRef.update({ chatPoints: data.chatPoints });
