@@ -1,37 +1,44 @@
 import admin from "firebase-admin";
 
+// Initialize Firebase only once
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(
-      JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString())
-    )
+      JSON.parse(
+        Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString()
+      )
+    ),
   });
 }
 
 const db = admin.firestore();
 
 export default async function handler(req, res) {
-  const { viewer } = req.query;
+  const { viewer, points, key } = req.query;
 
-  try {
-    let snapshot;
-    if (viewer) {
-      // Return a specific viewer
-      const doc = await db.collection("leaderboard").doc(viewer).get();
-      if (!doc.exists) {
-        return res.json({ success: true, results: [{ name: viewer, points: 0 }] });
-      }
-      return res.json({ success: true, results: [doc.data()] });
-    } else {
-      // Return full leaderboard sorted by points descending
-      snapshot = await db.collection("leaderboard")
-                         .orderBy("points", "desc")
-                         .get();
-      const results = snapshot.docs.map(doc => doc.data());
-      return res.json({ success: true, results });
-    }
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: err.message });
+  // Security check
+  if (key !== process.env.MASTER_API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
+
+  if (!viewer || !points) {
+    return res.status(400).json({ error: "Missing parameters" });
+  }
+
+  const docRef = db.collection("leaderboard").doc(viewer);
+  const doc = await docRef.get();
+
+  let newPoints = parseInt(points);
+
+  if (doc.exists) {
+    // Increment existing points
+    newPoints = doc.data().points + newPoints;
+    await docRef.update({ points: newPoints });
+  } else {
+    // First-time viewer, create document with starting points
+    await docRef.set({ name: viewer, points: newPoints });
+  }
+
+  // Return updated viewer info
+  return res.json({ success: true, results: [{ name: viewer, points: newPoints }] });
 }
