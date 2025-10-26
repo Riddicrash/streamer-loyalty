@@ -1,8 +1,13 @@
 import admin from "firebase-admin";
 
+// Initialize Firebase only once
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString()))
+    credential: admin.credential.cert(
+      JSON.parse(
+        Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString()
+      )
+    ),
   });
 }
 
@@ -11,6 +16,7 @@ const db = admin.firestore();
 export default async function handler(req, res) {
   const { viewer, points, key } = req.query;
 
+  // Security check
   if (key !== process.env.MASTER_API_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -22,14 +28,17 @@ export default async function handler(req, res) {
   const docRef = db.collection("leaderboard").doc(viewer);
   const doc = await docRef.get();
 
+  let newPoints = parseInt(points);
+
   if (doc.exists) {
-    await docRef.update({ points: doc.data().points + parseInt(points) });
+    // Increment existing points
+    newPoints = doc.data().points + newPoints;
+    await docRef.update({ points: newPoints });
   } else {
-    await docRef.set({ name: viewer, points: parseInt(points) });
+    // First-time viewer, create document with starting points
+    await docRef.set({ name: viewer, points: newPoints });
   }
 
-  const snapshot = await db.collection("leaderboard").get();
-  const results = snapshot.docs.map(doc => doc.data());
-
-  return res.json({ success: true, count: results.length, results });
+  // Return updated viewer info
+  return res.json({ success: true, results: [{ name: viewer, points: newPoints }] });
 }
