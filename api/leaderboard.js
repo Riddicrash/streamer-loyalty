@@ -11,21 +11,27 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 export default async function handler(req, res) {
+  const { viewer } = req.query;
+
   try {
-    const { viewer } = req.query;
-
+    let snapshot;
     if (viewer) {
-      // Return only one viewer
+      // Return a specific viewer
       const doc = await db.collection("leaderboard").doc(viewer).get();
-      if (!doc.exists) return res.json({ success: true, results: [] });
+      if (!doc.exists) {
+        return res.json({ success: true, results: [{ name: viewer, points: 0 }] });
+      }
       return res.json({ success: true, results: [doc.data()] });
+    } else {
+      // Return full leaderboard sorted by points descending
+      snapshot = await db.collection("leaderboard")
+                         .orderBy("points", "desc")
+                         .get();
+      const results = snapshot.docs.map(doc => doc.data());
+      return res.json({ success: true, results });
     }
-
-    // Otherwise return all
-    const snapshot = await db.collection("leaderboard").get();
-    const results = snapshot.docs.map(doc => doc.data());
-    return res.json({ success: true, count: results.length, results });
   } catch (err) {
+    console.error(err);
     return res.status(500).json({ error: err.message });
   }
 }
